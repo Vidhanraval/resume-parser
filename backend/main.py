@@ -6,6 +6,10 @@ from job_parser import parse_job
 from matcher import hiring_decision
 from supabase_client import supabase
 
+from nltk_setup import setup_nltk
+setup_nltk()
+
+
 app = FastAPI()
 
 app.add_middleware(
