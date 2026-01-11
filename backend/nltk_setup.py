@@ -1,8 +1,16 @@
 import nltk
 
 def setup_nltk():
-    nltk.download("punkt")
-    nltk.download("punkt_tab")
-    nltk.download("stopwords")
-    nltk.download("wordnet")        # ✅ REQUIRED for lemmatization
-    nltk.download("omw-1.4")        # ✅ REQUIRED dependency for wordnet
+    resources = [
+        "punkt",
+        "punkt_tab",
+        "stopwords",
+        "wordnet",
+        "omw-1.4"
+    ]
+
+    for r in resources:
+        try:
+            nltk.data.find(r)
+        except LookupError:
+            nltk.download(r)
