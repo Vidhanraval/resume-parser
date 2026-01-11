@@ -2,37 +2,16 @@ from io import BytesIO
 import pdfplumber
 import re
 import nltk
-
 from nltk.corpus import stopwords
 from nltk.tokenize import word_tokenize
 from nltk.stem import WordNetLemmatizer
 
-# ---------------------------
-# SKILLS DB (MATCH YOUR RESUME)
-# ---------------------------
-SKILLS_DB = [
-    "graphic design",
-    "visual imagination",
-    "typography",
-    "digital illustration",
-    "design software",
-    "communication",
-    "ui ux design"
-]
+# Make sure NLTK resources are available
+nltk.download("punkt")
+nltk.download("stopwords")
+nltk.download("wordnet")
 
-# ---------------------------
-# FIX BROKEN PDF TEXT
-# ---------------------------
-def fix_spaced_text(text):
-    return re.sub(
-        r'(?:^|\n)(?:[a-z]\s)+[a-z](?:$|\n)',
-        lambda m: m.group(0).replace(" ", ""),
-        text
-    )
 
-# ---------------------------
-# PDF TEXT EXTRACTION
-# ---------------------------
 def extract_text_from_pdf(file_bytes):
     text = ""
     with pdfplumber.open(BytesIO(file_bytes)) as pdf:
@@ -40,69 +19,83 @@ def extract_text_from_pdf(file_bytes):
             page_text = page.extract_text()
             if page_text:
                 text += page_text + "\n"
+    return text.lower()
 
-    text = text.lower()
-    text = fix_spaced_text(text)
-    text = text.replace("ui/ux", "ui ux")
 
-    return text
-
-# ---------------------------
-# PREPROCESS
-# ---------------------------
-def preprocess_text(text):
-    tokens = word_tokenize(text)
-
-    stop_words = set(stopwords.words("english"))
-    lemmatizer = WordNetLemmatizer()
-
-    return [
-        lemmatizer.lemmatize(tok)
-        for tok in tokens
-        if tok.isalpha() and tok not in stop_words
-    ]
-
-# ---------------------------
-# SKILL EXTRACTION (SECTION BASED)
-# ---------------------------
-def extract_skills(text):
-    match = re.search(r"skill[s]?\n(.+?)\nwork experience", text, re.DOTALL)
+def extract_skills_from_section(text):
+    """
+    Extract skills ONLY from the skills section of the resume
+    """
+    # Try to capture content after "skill" or "skills"
+    match = re.search(
+        r"(skills|skill)(.*?)(education|experience|work|projects|$)",
+        text,
+        re.DOTALL
+    )
 
     if not match:
         return []
 
-    skills_text = match.group(1)
-    tokens = preprocess_text(skills_text)
-    joined = " ".join(tokens)
+    skills_text = match.group(2)
 
-    return [s for s in SKILLS_DB if s in joined]
+    # Tokenize
+    tokens = word_tokenize(skills_text)
 
-# ---------------------------
-# EXPERIENCE
-# ---------------------------
+    stop_words = set(stopwords.words("english"))
+    lemmatizer = WordNetLemmatizer()
+
+    cleaned_tokens = [
+        lemmatizer.lemmatize(token)
+        for token in tokens
+        if token.isalpha() and token not in stop_words
+    ]
+
+    # Reconstruct phrases (bigrams)
+    skills = set()
+    for i in range(len(cleaned_tokens) - 1):
+        phrase = cleaned_tokens[i] + " " + cleaned_tokens[i + 1]
+        skills.add(phrase)
+
+    # Also keep single-word skills
+    skills.update(cleaned_tokens)
+
+    return sorted(skills)
+
+
 def extract_experience(text):
-    years = re.findall(r"(\d+)\s*(?:year|years)", text)
-    return max(map(int, years)) if years else 0
+    matches = re.findall(r"(\d+)\s*(years|year)", text)
+    if matches:
+        return max(int(m[0]) for m in matches)
+    return 0
 
-# ---------------------------
-# EDUCATION
-# ---------------------------
+
 def extract_education(text):
-    keywords = ["university", "bachelor", "master", "mba", "phd"]
-    return [k for k in keywords if k in text]
+    education_keywords = [
+        "bachelor", "master", "masters", "mba", "phd",
+        "university", "college"
+    ]
 
-# ---------------------------
-# MAIN
-# ---------------------------
+    found = []
+    for word in education_keywords:
+        if word in text:
+            found.append(word)
+
+    return list(set(found))
+
+
 def parse_resume(file_bytes, filename):
     if filename.endswith(".pdf"):
         text = extract_text_from_pdf(file_bytes)
     else:
         text = file_bytes.decode("utf-8").lower()
 
+    skills = extract_skills_from_section(text)
+    experience = extract_experience(text)
+    education = extract_education(text)
+
     return {
-        "skills": extract_skills(text),
-        "education": extract_education(text),
-        "experience": extract_experience(text),
+        "skills": skills,
+        "education": education,
+        "experience": experience,
         "raw_text": text
     }
